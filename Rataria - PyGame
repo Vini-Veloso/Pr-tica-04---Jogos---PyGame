@@ -1,0 +1,144 @@
+import pygame
+import random
+import sys
+
+pygame.init()
+
+LARGURA, ALTURA = 600, 440
+HUD_ALTURA = 40
+TAMANHO = 40
+VELOCIDADE = 8
+
+tela = pygame.display.set_mode((LARGURA, ALTURA))
+pygame.display.set_caption("Rataria")
+relogio = pygame.time.Clock()
+fonte = pygame.font.SysFont("Arial", 20, bold=True)
+
+# --- Imagens ---
+try:
+    img_rato_original = pygame.image.load("rato.png").convert_alpha()
+    img_rato_base = pygame.transform.scale(img_rato_original, (TAMANHO, TAMANHO))
+except Exception:
+    img_rato_base = pygame.Surface((TAMANHO, TAMANHO), pygame.SRCALPHA)
+    pygame.draw.ellipse(img_rato_base, (100, 120, 130), (0, 6, TAMANHO, TAMANHO - 6))
+    pygame.draw.circle(img_rato_base, (100, 120, 130), (TAMANHO - 8, 8), 8)
+    pygame.draw.circle(img_rato_base, (220, 50, 50), (TAMANHO - 4, 5), 3)
+
+try:
+    img_queijo = pygame.transform.scale(
+        pygame.image.load("queijo.png").convert_alpha(), (TAMANHO, TAMANHO))
+except Exception:
+    img_queijo = pygame.Surface((TAMANHO, TAMANHO), pygame.SRCALPHA)
+    pygame.draw.polygon(img_queijo, (255, 215, 40),
+                        [(2, TAMANHO - 2), (TAMANHO - 2, TAMANHO - 2), (TAMANHO // 2, 2)])
+    for cx, cy, r in [(10, 26, 4), (24, 22, 3), (18, 32, 3)]:
+        pygame.draw.circle(img_queijo, (200, 155, 10), (cx, cy), r)
+
+# Pré-gera rotações do rato para cada direção
+# O PNG do Remy está de frente/virado para a direita por padrão
+imagens_rato = {
+    (TAMANHO,  0):  img_rato_base,                                    # direita
+    (-TAMANHO, 0):  pygame.transform.flip(img_rato_base, True, False),# esquerda
+    (0, -TAMANHO):  pygame.transform.rotate(img_rato_base, -90),      # cima
+    (0,  TAMANHO):  pygame.transform.rotate(img_rato_base, 90),       # baixo
+}
+
+def posicao_aleatoria():
+    cols  = LARGURA // TAMANHO
+    linhas = (ALTURA - HUD_ALTURA) // TAMANHO
+    x = random.randrange(0, cols) * TAMANHO
+    y = HUD_ALTURA + random.randrange(0, linhas) * TAMANHO
+    return (x, y)
+
+def posicao_inicial():
+    return (TAMANHO * 3, HUD_ALTURA + TAMANHO * 2)
+
+def nova_comida(rato):
+    while True:
+        pos = posicao_aleatoria()
+        if pos != rato[0]:
+            return pos
+
+# --- Desenho ---
+def desenhar(rato, comida, queijos, direcao):
+    tela.fill((15, 45, 15))
+
+    # HUD
+    pygame.draw.rect(tela, (30, 30, 30), (0, 0, LARGURA, HUD_ALTURA))
+    texto = fonte.render(f" Queijos: {queijos}", True, (255, 215, 40))
+    tela.blit(texto, (LARGURA // 2 - texto.get_width() // 2, 9))
+
+    # Queijo
+    tela.blit(img_queijo, comida)
+
+    # Rato (com rotação conforme direção)
+    tela.blit(imagens_rato[direcao], rato[0])
+
+    pygame.display.update()
+
+def tela_game_over(queijos):
+    tela.fill((10, 10, 10))
+    linhas = [
+        (fonte.render("GAME OVER", True, (220, 50, 50)),   155),
+        (fonte.render(f"Queijos coletados: {queijos}", True, (255, 215, 40)), 200),
+        (fonte.render("R — jogar de novo     Q — sair",   True, (180, 180, 180)), 245),
+    ]
+    for surf, y in linhas:
+        tela.blit(surf, (LARGURA // 2 - surf.get_width() // 2, y))
+    pygame.display.update()
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if ev.type == pygame.KEYDOWN:
+                if ev.key == pygame.K_r: return True
+                if ev.key == pygame.K_q: pygame.quit(); sys.exit()
+
+# --- Loop principal do jogo ---
+def jogar():
+    rato    = [posicao_inicial()]
+    direcao = (TAMANHO, 0)
+    prox    = direcao
+    comida  = nova_comida(rato)
+    queijos = 0
+    frame   = 0
+
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if ev.type == pygame.KEYDOWN:
+                if   ev.key == pygame.K_UP    and direcao != (0,  TAMANHO): prox = (0, -TAMANHO)
+                elif ev.key == pygame.K_DOWN  and direcao != (0, -TAMANHO): prox = (0,  TAMANHO)
+                elif ev.key == pygame.K_LEFT  and direcao != (TAMANHO,  0): prox = (-TAMANHO, 0)
+                elif ev.key == pygame.K_RIGHT and direcao != (-TAMANHO, 0): prox = ( TAMANHO, 0)
+
+        frame += 1
+        if frame >= VELOCIDADE:
+            frame   = 0
+            direcao = prox
+            cabeca  = (rato[0][0] + direcao[0], rato[0][1] + direcao[1])
+
+            # Colisão com parede → game over
+            if (cabeca[0] < 0 or cabeca[0] >= LARGURA or
+                    cabeca[1] < HUD_ALTURA or cabeca[1] >= ALTURA):
+                return queijos
+
+            # Move (tamanho fixo: insere cabeça, remove cauda)
+            rato.insert(0, cabeca)
+            rato.pop()
+
+            # Pegou queijo
+            if rato[0] == comida:
+                queijos += 1
+                comida = nova_comida(rato)
+
+        desenhar(rato, comida, queijos, direcao)
+        relogio.tick(45)
+
+while True:
+    resultado = jogar()
+    if not tela_game_over(resultado):
+        break
+
+pygame.quit()
